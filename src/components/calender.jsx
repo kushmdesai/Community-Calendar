@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle } from 'lucide-react';
 
 export default function CommunityCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -7,13 +7,17 @@ export default function CommunityCalendar() {
   const [showModal, setShowModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    time: '',
+    event_time: '',
     organizer: '',
-    date: ''
+    event_date: ''
   });
+
+  const API_BASE_URL = 'http://localhost:8000/api';
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -21,6 +25,80 @@ export default function CommunityCalendar() {
   ];
 
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // API Functions
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/events`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch events');
+      }
+      const data = await response.json();
+      setEvents(data);
+    } catch (err) {
+      setError('Failed to load events');
+      console.error('Error fetching events:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createEvent = async (eventData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(eventData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to create event');
+      }
+      
+      const newEvent = await response.json();
+      setEvents(prev => [...prev, newEvent]);
+      return newEvent;
+    } catch (err) {
+      setError('Failed to create event');
+      console.error('Error creating event:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteEvent = async (eventId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete event');
+      }
+      
+      setEvents(prev => prev.filter(event => event.id !== eventId));
+    } catch (err) {
+      setError('Failed to delete event');
+      console.error('Error deleting event:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load events on component mount
+  useEffect(() => {
+    fetchEvents();
+  }, []);
 
   // Get days in month
   const getDaysInMonth = (date) => {
@@ -85,12 +163,13 @@ export default function CommunityCalendar() {
   };
 
   const getEventsForDate = (date) => {
-    return events.filter(event => event.date === formatDate(date));
+    return events.filter(event => event.event_date === formatDate(date));
   };
 
   const handleDayClick = (dayData) => {
     setSelectedDate(dayData.date);
-    setFormData(prev => ({ ...prev, date: formatDate(dayData.date) }));
+    setFormData(prev => ({ ...prev, event_date: formatDate(dayData.date) }));
+    setSelectedEvent(null);
     setShowModal(true);
   };
 
@@ -100,17 +179,17 @@ export default function CommunityCalendar() {
     setShowModal(true);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.title && formData.date) {
-      const newEvent = {
-        id: Date.now(),
-        ...formData
-      };
-      setEvents(prev => [...prev, newEvent]);
-      setFormData({ title: '', description: '', time: '', organizer: '', date: '' });
-      setShowModal(false);
-      setSelectedDate(null);
+    if (formData.title && formData.event_date) {
+      try {
+        await createEvent(formData);
+        setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '' });
+        setShowModal(false);
+        setSelectedDate(null);
+      } catch (err) {
+        // Error is already handled in createEvent function
+      }
     }
   };
 
@@ -118,7 +197,8 @@ export default function CommunityCalendar() {
     setShowModal(false);
     setSelectedEvent(null);
     setSelectedDate(null);
-    setFormData({ title: '', description: '', time: '', organizer: '', date: '' });
+    setError(null);
+    setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '' });
   };
 
   const days = getDaysInMonth(currentDate);
@@ -134,6 +214,12 @@ export default function CommunityCalendar() {
           <p className="text-xl text-purple-100">
             Share events with your community
           </p>
+          {error && (
+            <div className="mt-4 bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Controls */}
@@ -157,10 +243,15 @@ export default function CommunityCalendar() {
           </div>
           
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+            onClick={() => {
+              setSelectedEvent(null);
+              setSelectedDate(null);
+              setShowModal(true);
+            }}
+            disabled={loading}
+            className="flex items-center gap-2 bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus className="w-5 h-5" />
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
             Add Event
           </button>
         </div>
@@ -193,7 +284,7 @@ export default function CommunityCalendar() {
                   <div className={`font-semibold text-lg mb-2 ${isToday(dayData.date) ? 'text-white' : ''}`}>
                     {dayData.day}
                   </div>
-                  <div className="space-y-1">
+                                        <div className="space-y-1">
                     {dayEvents.slice(0, 3).map(event => (
                       <div
                         key={event.id}
@@ -201,7 +292,7 @@ export default function CommunityCalendar() {
                         className="bg-gradient-to-r from-orange-400 to-pink-500 text-white text-xs p-2 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md"
                       >
                         <div className="font-medium truncate">{event.title}</div>
-                        {event.time && <div className="opacity-90">{event.time}</div>}
+                        {event.event_time && <div className="opacity-90">{event.event_time}</div>}
                       </div>
                     ))}
                     {dayEvents.length > 3 && (
@@ -236,12 +327,12 @@ export default function CommunityCalendar() {
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 text-gray-700">
                     <Calendar className="w-5 h-5 text-purple-500" />
-                    <span className="font-semibold">{selectedEvent.date}</span>
+                    <span className="font-semibold">{selectedEvent.event_date}</span>
                   </div>
-                  {selectedEvent.time && (
+                  {selectedEvent.event_time && (
                     <div className="flex items-center gap-3 text-gray-700">
                       <Clock className="w-5 h-5 text-purple-500" />
-                      <span>{selectedEvent.time}</span>
+                      <span>{selectedEvent.event_time}</span>
                     </div>
                   )}
                   {selectedEvent.organizer && (
@@ -256,9 +347,31 @@ export default function CommunityCalendar() {
                     </h4>
                     <p className="text-gray-600">{selectedEvent.description}</p>
                   </div>
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={closeModal}
+                      className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={() => deleteEvent(selectedEvent.id)}
+                      disabled={loading}
+                      className="flex-1 py-3 px-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Delete Event'}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      {error}
+                    </div>
+                  )}
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Event Title *
@@ -292,8 +405,8 @@ export default function CommunityCalendar() {
                     </label>
                     <input
                       type="date"
-                      value={formData.date}
-                      onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                      value={formData.event_date}
+                      onChange={(e) => setFormData(prev => ({ ...prev, event_date: e.target.value }))}
                       className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                       required
                     />
@@ -305,8 +418,8 @@ export default function CommunityCalendar() {
                     </label>
                     <input
                       type="time"
-                      value={formData.time}
-                      onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
+                      value={formData.event_time}
+                      onChange={(e) => setFormData(prev => ({ ...prev, event_time: e.target.value }))}
                       className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
                   </div>
@@ -328,16 +441,21 @@ export default function CommunityCalendar() {
                     <button
                       type="button"
                       onClick={closeModal}
-                      className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+                      disabled={loading}
+                      className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Cancel
                     </button>
                     <button
-                      type="submit"
                       onClick={handleSubmit}
-                      className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg"
+                      disabled={loading || !formData.title || !formData.event_date}
+                      className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                     >
-                      Create Event
+                      {loading ? (
+                        <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                      ) : (
+                        'Create Event'
+                      )}
                     </button>
                   </div>
                 </div>
