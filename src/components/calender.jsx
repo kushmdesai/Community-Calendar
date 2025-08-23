@@ -9,6 +9,7 @@ export default function CommunityCalendar() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -93,6 +94,50 @@ export default function CommunityCalendar() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const updateEvent = async (eventId, eventData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(eventData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to update event');
+      }
+
+      const updatedEvent = await response.json()
+      setEvents(prev => prev.map (event =>
+        event.id === eventId ? updatedEvent : event
+      ));
+      return updateEvent;
+    } catch (err) {
+      setError('Failed to update event');
+      console.error('Error updating event:', err)
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleEditEvent = (event) => {
+    setEditingEvent(event);
+    setFormData({
+      title: event.title,
+      description: event.description || '',
+      event_date: event.event_date,
+      event_time: event.event_time || '',
+      organizer: event.organizer || ''
+    });
+    setSelectedEvent(null);
+    setShowModal(true);
   };
 
   // Load events on component mount
@@ -183,10 +228,15 @@ export default function CommunityCalendar() {
     e.preventDefault();
     if (formData.title && formData.event_date) {
       try {
-        await createEvent(formData);
-        setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '' });
+        if (editingEvent) {
+          await updateEvent(editingEvent.id, formData);
+        } else {
+          await createEvent(formData)
+        }
+        setFormData({title: '', description: '', event_time: '', organizer: '', event_date: ''})
         setShowModal(false);
         setSelectedDate(null);
+        setEditingEvent(null);
       } catch (err) {
         // Error is already handled in createEvent function
       }
@@ -197,6 +247,7 @@ export default function CommunityCalendar() {
     setShowModal(false);
     setSelectedEvent(null);
     setSelectedDate(null);
+    setEditingEvent(null);
     setError(null);
     setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '' });
   };
@@ -313,7 +364,7 @@ export default function CommunityCalendar() {
             <div className="bg-white rounded-3xl p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-2xl font-bold text-gray-800">
-                  {selectedEvent ? 'Event Details' : 'Create New Event'}
+                  {selectedEvent ? 'Event Details' : editingEvent ? 'Edit Event' : 'Create New Event'}
                 </h3>
                 <button
                   onClick={closeModal}
@@ -353,6 +404,13 @@ export default function CommunityCalendar() {
                       className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all"
                     >
                       Close
+                    </button>
+                    <button
+                      onClick={() => handleEditEvent(selectedEvent)}
+                      disabled={loading}
+                      className='flex-1 py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed'
+                    >
+                      Edit Event
                     </button>
                     <button
                       onClick={() => deleteEvent(selectedEvent.id)}
@@ -454,7 +512,7 @@ export default function CommunityCalendar() {
                       {loading ? (
                         <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                       ) : (
-                        'Create Event'
+                        editingEvent ? 'Update Event' : 'Create Event'
                       )}
                     </button>
                   </div>
