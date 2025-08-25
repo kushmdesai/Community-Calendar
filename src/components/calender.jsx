@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle } from 'lucide-react';
 
 export default function CommunityCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -10,12 +10,19 @@ export default function CommunityCalendar() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareModalDate, setShareModalData] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     event_time: '',
     organizer: '',
-    event_date: ''
+    event_date: '',
+    is_recurring: false,
+    recurrence_type: 'weekly',
+    recurrence_interval: 1,
+    recurrence_end_date: ''
   });
 
   const API_BASE_URL = 'http://localhost:8000/api';
@@ -28,6 +35,16 @@ export default function CommunityCalendar() {
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // API Functions
+
+  const refreshEvent = async () =>{
+    try {
+      setError(null);
+      await fetchEvents();
+    } catch (err) {
+      setError('Failed to refresh events')
+      console.error('Error refreshing events:', err)
+    }
+  }
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -50,6 +67,9 @@ export default function CommunityCalendar() {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log("Sending POST request with:", eventData);
+      
       const response = await fetch(`${API_BASE_URL}/events`, {
         method: 'POST',
         headers: {
@@ -60,15 +80,18 @@ export default function CommunityCalendar() {
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("Server responded with error:", errorData);
         throw new Error(errorData.detail || 'Failed to create event');
       }
       
       const newEvent = await response.json();
+      console.log("Event created successfully:", newEvent);
       setEvents(prev => [...prev, newEvent]);
+      await refreshEvent()
       return newEvent;
     } catch (err) {
-      setError('Failed to create event');
       console.error('Error creating event:', err);
+      setError('Failed to create event: ' + err.message);
       throw err;
     } finally {
       setLoading(false);
@@ -88,6 +111,8 @@ export default function CommunityCalendar() {
       }
       
       setEvents(prev => prev.filter(event => event.id !== eventId));
+      closeModal()
+      await refreshEvent()
     } catch (err) {
       setError('Failed to delete event');
       console.error('Error deleting event:', err);
@@ -106,26 +131,27 @@ export default function CommunityCalendar() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(eventData)
-      })
+      }); // Added missing semicolon
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to update event');
       }
 
-      const updatedEvent = await response.json()
-      setEvents(prev => prev.map (event =>
+      const updatedEvent = await response.json(); // Fixed semicolon
+      setEvents(prev => prev.map(event =>
         event.id === eventId ? updatedEvent : event
       ));
-      return updateEvent;
+      await refreshEvent()
+      return updatedEvent; // Fixed: was returning updateEvent function instead of updatedEvent
     } catch (err) {
       setError('Failed to update event');
-      console.error('Error updating event:', err)
+      console.error('Error updating event:', err); // Added missing semicolon
       throw err;
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   const handleEditEvent = (event) => {
     setEditingEvent(event);
@@ -134,7 +160,11 @@ export default function CommunityCalendar() {
       description: event.description || '',
       event_date: event.event_date,
       event_time: event.event_time || '',
-      organizer: event.organizer || ''
+      organizer: event.organizer || '',
+      is_recurring: event.is_recurring || false,
+      recurrence_type: event.recurrence_type || 'weekly',
+      recurrence_interval: event.recurrence_interval || 1,
+      recurrence_end_date: event.recurrence_end_date || ''
     });
     setSelectedEvent(null);
     setShowModal(true);
@@ -143,7 +173,36 @@ export default function CommunityCalendar() {
   // Load events on component mount
   useEffect(() => {
     fetchEvents();
+    fetchStats();
   }, []);
+
+  useEffect(() => {
+    if (events.length >= 0) {
+      fetchStats();
+    }
+  }, [events])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('id');
+
+    if (eventId && eventId.length > 0) {
+      const eventToOpen = events.find(event => event.id.toString() === eventId);
+
+      if (eventToOpen) {
+        setSelectedEvent(eventToOpen);
+        setShowModal(true);
+      };
+    };
+  }, [events]);
+
+  const generateShareableLink = (event) => {
+    const baseUrl = window.location.origin;
+    const eventParams = new URLSearchParams({
+      id: event.id
+    });
+    return `${baseUrl}/share-event?${eventParams.toString()}`;
+  }
 
   // Get days in month
   const getDaysInMonth = (date) => {
@@ -224,24 +283,62 @@ export default function CommunityCalendar() {
     setShowModal(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (formData.title && formData.event_date) {
-      try {
-        if (editingEvent) {
-          await updateEvent(editingEvent.id, formData);
-        } else {
-          await createEvent(formData)
-        }
-        setFormData({title: '', description: '', event_time: '', organizer: '', event_date: ''})
-        setShowModal(false);
-        setSelectedDate(null);
-        setEditingEvent(null);
-      } catch (err) {
-        // Error is already handled in createEvent function
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  // Debug: Log the form data being sent
+  console.log("Form data being sent:", formData);
+  
+  if (formData.title && formData.event_date) {
+    try {
+      // Clean the data before sending
+      const cleanedData = {
+        title: formData.title.trim(),
+        description: formData.description || null,
+        event_date: formData.event_date, // Should be YYYY-MM-DD format
+        event_time: formData.event_time || null, // Should be HH:MM format or null
+        organizer: formData.organizer || null,
+        is_recurring: Boolean(formData.is_recurring),
+        recurrence_type: formData.is_recurring ? formData.recurrence_type : null,
+        recurrence_interval: formData.is_recurring ? parseInt(formData.recurrence_interval) : null,
+        recurrence_end_date: (formData.is_recurring && formData.recurrence_end_date) ? formData.recurrence_end_date : null
+      };
+      
+      console.log("Cleaned data being sent:", cleanedData);
+      
+      if (editingEvent) {
+        await updateEvent(editingEvent.id, cleanedData);
+      } else {
+        await createEvent(cleanedData);
       }
+      
+      // Reset form
+      setFormData({
+        title: '', 
+        description: '', 
+        event_time: '', 
+        organizer: '', 
+        event_date: '',
+        is_recurring: false,
+        recurrence_type: 'weekly',
+        recurrence_interval: 1,
+        recurrence_end_date: ''
+      });
+      setShowModal(false);
+      setSelectedDate(null);
+      setEditingEvent(null);
+    } catch (err) {
+      console.error("Submit error:", err);
+      // Error is already handled in createEvent function
     }
-  };
+  } else {
+    console.error("Missing required fields:", {
+      title: formData.title,
+      event_date: formData.event_date
+    });
+  }
+};
 
   const closeModal = () => {
     setShowModal(false);
@@ -249,10 +346,99 @@ export default function CommunityCalendar() {
     setSelectedDate(null);
     setEditingEvent(null);
     setError(null);
-    setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '' });
+    setFormData({ 
+      title: '', 
+      description: '',
+       event_time: '',
+       organizer: '', 
+       event_date: '',
+       is_recurring: false,
+       recurrence_type: 'weekly',
+       recurrence_interval: 1,
+       recurrence_end_date: ''
+      });
   };
 
   const days = getDaysInMonth(currentDate);
+
+  const fetchStats = async () => {
+    try{
+      const response = await fetch(`${API_BASE_URL}/stats`);
+      if (response.ok) {
+        const statsData = await response.json();
+        setStats(statsData);
+        return statsData;
+      }
+    } catch (err) {
+      console.error('Error fetching ststs:', err)
+    }
+  }
+
+  const ShareModal = ({ event, isOpen, onClose}) => {
+    const shareUrl = generateShareableLink(event);
+    const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
+
+    const copyToClipboard = async () => {
+      try{
+        await navigator.clipboard.writeText(shareUrl)
+        alert('Link copied to clipboard');
+      } catch (err) {
+        console.error('failed to copy:', err)
+      }
+    };
+
+    const shareViaEmail = () => {
+      const subject = encodeURIComponent(`Invitation: ${event.title}`);
+      const body = encodeURIComponent(`${shareText}\n\nView event details: ${shareUrl}`);
+      window.open(`mailto:?subject=${subject}&body=${body}`)
+    };
+
+    const shareViaWhatsApp =() => {
+      const text = encodeURIComponent(`${shareText}\n${shareUrl}`)
+      window.open(`https://wa.me/?text=${text}`)
+    };
+
+    if (!isOpen) return null;
+
+    return (
+      <div className='fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-60 p-4'>
+        <div className='bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl'>
+          <div className='flex justify-between items-center mb-4'>
+            <h3 className='text-xl font-bold text-gray-800'>Share Event</h3>
+            <button onClick={onClose} className='p-2 rounded-full hover:bg-gray-100'>
+              <X className='w-5 h-5'/>
+            </button>
+          </div>
+
+          <div className='space-y-3'>
+            <button
+              onClick={copyToClipboard}
+              className='w-full p-3 border boder-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
+            >
+              <Share className='w-5 h-5 text-purple-500' />
+              Copy Link
+            </button>
+
+            <button
+              onClick={shareViaEmail}
+              className='w-full p-3 border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
+            >
+              <Mail className='w-5 h-5 text-blue-500' />
+              Share Via Email
+            </button>
+
+            <button
+              onClick={shareViaWhatsApp}  
+              className='w-full p-3 border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
+            >
+              <MessageCircle className='w-5 h-5 text-green-500'/>
+              Share via WhatsApp
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800">
@@ -272,6 +458,41 @@ export default function CommunityCalendar() {
             </div>
           )}
         </div>
+
+        {/* Stats Section */}
+        {stats && (
+          <div className='grid grid-cols-1 md:grid-cols-3 gap-6 mb-8'>
+            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
+              <div className='flex items-center gap-3'>
+                <Calendar className='w-8 h-8 text-orange-300' />
+                <div>
+                  <p className='text-white/80 text-sm'>Total Events</p>
+                  <p className='text-3xl font-bold text-white'>{stats.total_events}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
+              <div className='flex items-center gap-3'>
+                <Clock className='w-8 h-8 text-blue-300' />
+                <div>
+                  <p className='text-white/80 text-sm'>This Month</p>
+                  <p className='text-3xl font-bold text-white'>{stats.events_this_month}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
+              <div className='flex items-center gap-3'>
+                <User className='w-8 h-8 text-green-300' />
+                <div>
+                  <p className='text-white/80 text-sm'>Upcoming (30 Days)</p>
+                  <p className='text-3xl font-bold text-white'>{stats.upcoming_events}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
@@ -335,14 +556,14 @@ export default function CommunityCalendar() {
                   <div className={`font-semibold text-lg mb-2 ${isToday(dayData.date) ? 'text-white' : ''}`}>
                     {dayData.day}
                   </div>
-                                        <div className="space-y-1">
+                  <div className="space-y-1">
                     {dayEvents.slice(0, 3).map(event => (
                       <div
                         key={event.id}
                         onClick={(e) => handleEventClick(event, e)}
                         className="bg-gradient-to-r from-orange-400 to-pink-500 text-white text-xs p-2 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md"
                       >
-                        <div className="font-medium truncate">{event.title}</div>
+                        <div className="font-medium truncate">{event.title}{event.is_recurring && <span className='text-yellow-200'>🔄</span>}</div>
                         {event.event_time && <div className="opacity-90">{event.event_time}</div>}
                       </div>
                     ))}
@@ -357,7 +578,13 @@ export default function CommunityCalendar() {
             })}
           </div>
         </div>
-
+        {showShareModal && selectedEvent && (
+          <ShareModal
+            event={selectedEvent}
+            isOpen={(showShareModal)}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -404,6 +631,13 @@ export default function CommunityCalendar() {
                       className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all"
                     >
                       Close
+                    </button>
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      className='flex-1 py-3 px-6 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg'
+                    >
+                      <Share className='w-5 h-5 inline mr-2' />
+                      Share Event
                     </button>
                     <button
                       onClick={() => handleEditEvent(selectedEvent)}
@@ -483,6 +717,66 @@ export default function CommunityCalendar() {
                   </div>
 
                   <div>
+                    <label className='flex items-center gap-3 text-sm font-medium text-gray-700'>
+                      <input 
+                        type="checkbox"
+                        checked={formData.is_recurring}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_recurring: e.target.checked}))}
+                        className='w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500'
+                      />
+                      Recurring Event
+                    </label>
+                  </div>
+
+                  {formData.is_recurring && (
+                    <>
+                      <div className='grid grid-cols-2 gap-4'>
+                        <div>
+                          <label className='block text-sm font-medium text-gray-700 mb-2'>
+                            Repeat Every
+                          </label>
+                          <input 
+                            type="number"
+                            min="1"
+                            max="365"
+                            value={formData.recurrence_interval}
+                            onChange={(e) => setFormData(prev => ({ ...prev, recurrence_interval: parseInt(e.target.value) || 1}))}
+                            className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
+                          />
+                        </div>
+
+                        <div>
+                          <label className='block text-sm font-medium text-gray-700 mb-2'>
+                            Period
+                          </label>
+                          <select
+                            value={formData.recurrence_type}
+                            onChange={(e) => setFormData( prev => ({...prev, recurrence_type:e.target.value}))}
+                            className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
+                          >
+                            <option value="daily">Day(s)</option>
+                            <option value="weekly">Week(s)</option>
+                            <option value="monthly">Month(s)</option>
+                            <option value="yearly">Year(s)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className='block text-sm font-medium text-gray-700 mb-2'>
+                          End date (optional)
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.recurrence_end_date}
+                          onChange={(e) => setFormData(prev => ({ ...prev, recurrence_end_date: e.target.value}))}
+                          className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Organizer
                     </label>
@@ -494,7 +788,6 @@ export default function CommunityCalendar() {
                       placeholder="Your name or organization"
                     />
                   </div>
-
                   <div className="flex gap-3 pt-4">
                     <button
                       type="button"
