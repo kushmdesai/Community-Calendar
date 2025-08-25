@@ -25,7 +25,7 @@ export default function CommunityCalendar() {
     recurrence_end_date: ''
   });
 
-  const API_BASE_URL = 'http://localhost:8000/api';
+  const API_BASE_URL = 'https://community-calendar-backend-4uff.onrender.com/api';
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -442,7 +442,7 @@ const handleSubmit = async (e) => {
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/api/calendar/export.ics`);
+      const response = await fetch(`https://community-calendar-backend-4uff.onrender.com/api/calendar/export.ics`);
       if (!response.ok) throw new Error('Failed to export Calendar');
 
       const blob = await response.blob();
