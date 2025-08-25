@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle, Download } from 'lucide-react';
 
 export default function CommunityCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -440,6 +440,28 @@ const handleSubmit = async (e) => {
     );
   };
 
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/calendar/export.ics`);
+      if (!response.ok) throw new Error('Failed to export Calendar');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "calender.ics";
+      document.body.append(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      alert("Could not download calendar")
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800">
       <div className="container mx-auto px-4 py-8">
@@ -513,20 +535,28 @@ const handleSubmit = async (e) => {
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
-          
-          <button
-            onClick={() => {
-              setSelectedEvent(null);
-              setSelectedDate(null);
-              setShowModal(true);
-            }}
-            disabled={loading}
-            className="flex items-center gap-2 bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-            Add Event
-          </button>
-        </div>
+          <div className='flex items-center gap-4'>
+              <button
+                onClick={handleDownload}
+                className='flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 border border-emerald-400/20 '
+              >
+                <Download size={16} className='transition-transform duration-300 group-hover:translate-y-0.5'/>
+                Export Calendar
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedEvent(null);
+                  setSelectedDate(null);
+                  setShowModal(true);
+                }}
+                disabled={loading}
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                Add Event
+              </button>
+            </div>
+          </div>
 
         {/* Calendar */}
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden">
