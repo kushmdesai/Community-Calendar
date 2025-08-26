@@ -193,6 +193,11 @@ export default function CommunityCalendar() {
         setSelectedEvent(eventToOpen);
         setShowModal(true);
       };
+
+      // Remove the id param fro url without reloading
+      params.delete('id');
+      const newUrl = "/"
+      window.history.replaceState({}, '', newUrl)
     };
   }, [events]);
 
