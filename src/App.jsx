@@ -1,8 +1,6 @@
-import { useState } from 'react'
-import CommunityCalendar from './components/calender'
+import CommunityCalendar from './calender.jsx'
 
 function App() {
-  const [count, setCount] = useState(0)
 
   return (
     <CommunityCalendar />

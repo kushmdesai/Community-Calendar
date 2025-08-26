@@ -8,6 +8,7 @@ export default function CommunityCalendar() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [backendWaking, setBackendWaking] = useState(false);
   const [error, setError] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
   const [stats, setStats] = useState(null);
@@ -35,7 +36,7 @@ export default function CommunityCalendar() {
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // API Functions
-
+  // Fetch the events from backend again
   const refreshEvent = async () =>{
     try {
       setError(null);
@@ -45,6 +46,7 @@ export default function CommunityCalendar() {
       console.error('Error refreshing events:', err)
     }
   }
+  // Fetch events from frontend
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -62,7 +64,7 @@ export default function CommunityCalendar() {
       setLoading(false);
     }
   };
-
+  // Create A new Event
   const createEvent = async (eventData) => {
     try {
       setLoading(true);
@@ -97,7 +99,7 @@ export default function CommunityCalendar() {
       setLoading(false);
     }
   };
-
+  // Delete an Event
   const deleteEvent = async (eventId) => {
     try {
       setLoading(true);
@@ -120,7 +122,7 @@ export default function CommunityCalendar() {
       setLoading(false);
     }
   };
-
+  // Make Changes to an Event
   const updateEvent = async (eventId, eventData) => {
     try {
       setLoading(true);
@@ -131,28 +133,28 @@ export default function CommunityCalendar() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(eventData)
-      }); // Added missing semicolon
+      });
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to update event');
       }
 
-      const updatedEvent = await response.json(); // Fixed semicolon
+      const updatedEvent = await response.json();
       setEvents(prev => prev.map(event =>
         event.id === eventId ? updatedEvent : event
       ));
       await refreshEvent()
-      return updatedEvent; // Fixed: was returning updateEvent function instead of updatedEvent
+      return updatedEvent;
     } catch (err) {
       setError('Failed to update event');
-      console.error('Error updating event:', err); // Added missing semicolon
+      console.error('Error updating event:', err);
       throw err;
     } finally {
       setLoading(false);
     }
   };
-
+  // Handle Edits in Events (Used mostly in the form)
   const handleEditEvent = (event) => {
     setEditingEvent(event);
     setFormData({
@@ -170,18 +172,44 @@ export default function CommunityCalendar() {
     setShowModal(true);
   };
 
-  // Load events on component mount
+  // Load events on component mount as well as check if the backend is on or not
   useEffect(() => {
-    fetchEvents();
-    fetchStats();
-  }, []);
+    let timeoutId;
 
+    async function initBackend() {
+      setLoading(true);
+      setBackendWaking(false);
+
+      timeoutId = setTimeout(() => {
+        setBackendWaking(true)
+      }, 200)
+      try {
+        const ping = await fetch("https://community-calendar-0ymp.onrender.com/")
+        if (!ping.ok) throw new Error("Backend not responding")
+        
+        clearTimeout(timeoutId)
+        setBackendWaking(false);
+
+        fetchEvents();
+        fetchStats();
+      } catch (err) {
+        console.error(err);
+      }finally {
+        clearTimeout(timeoutId)
+        setLoading(false)
+      }
+    }
+    initBackend();
+
+
+  }, []);
+  // Fetch stats
   useEffect(() => {
     if (events.length >= 0) {
       fetchStats();
     }
   }, [events])
-
+//  Check if link opened is a shared event link and opens the event if it is
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const eventId = params.get('id');
@@ -200,7 +228,7 @@ export default function CommunityCalendar() {
       window.history.replaceState({}, '', newUrl)
     };
   }, [events]);
-
+  // Generates a link that can be shared to other users
   const generateShareableLink = (event) => {
     const baseUrl = window.location.origin;
     const eventParams = new URLSearchParams({
@@ -253,7 +281,7 @@ export default function CommunityCalendar() {
     
     return days;
   };
-
+  // Navigate between months
   const navigateMonth = (direction) => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
@@ -261,90 +289,90 @@ export default function CommunityCalendar() {
       return newDate;
     });
   };
-
+  // Formating the date
   const formatDate = (date) => {
     return date.toISOString().split('T')[0];
   };
-
+  // To check which date is today
   const isToday = (date) => {
     const today = new Date();
     return date.toDateString() === today.toDateString();
   };
-
+  // Get all events for a specific date
   const getEventsForDate = (date) => {
     return events.filter(event => event.event_date === formatDate(date));
   };
-
+  // Handle the click of a day (Used to open create event form with date already filled in)
   const handleDayClick = (dayData) => {
     setSelectedDate(dayData.date);
     setFormData(prev => ({ ...prev, event_date: formatDate(dayData.date) }));
     setSelectedEvent(null);
     setShowModal(true);
   };
-
+  // Handle the click of an Event
   const handleEventClick = (event, e) => {
     e.stopPropagation();
     setSelectedEvent(event);
     setShowModal(true);
   };
 
-
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  
-  // Debug: Log the form data being sent
-  console.log("Form data being sent:", formData);
-  
-  if (formData.title && formData.event_date) {
-    try {
-      // Clean the data before sending
-      const cleanedData = {
-        title: formData.title.trim(),
-        description: formData.description || null,
-        event_date: formData.event_date, // Should be YYYY-MM-DD format
-        event_time: formData.event_time || null, // Should be HH:MM format or null
-        organizer: formData.organizer || null,
-        is_recurring: Boolean(formData.is_recurring),
-        recurrence_type: formData.is_recurring ? formData.recurrence_type : null,
-        recurrence_interval: formData.is_recurring ? parseInt(formData.recurrence_interval) : null,
-        recurrence_end_date: (formData.is_recurring && formData.recurrence_end_date) ? formData.recurrence_end_date : null
-      };
-      
-      console.log("Cleaned data being sent:", cleanedData);
-      
-      if (editingEvent) {
-        await updateEvent(editingEvent.id, cleanedData);
-      } else {
-        await createEvent(cleanedData);
+  // Handling the Submit
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Debug: Log the form data being sent
+    console.log("Form data being sent:", formData);
+    
+    if (formData.title && formData.event_date) {
+      try {
+        // Clean the data before sending
+        const cleanedData = {
+          title: formData.title.trim(),
+          description: formData.description || null,
+          event_date: formData.event_date, // Should be YYYY-MM-DD format
+          event_time: formData.event_time || null, // Should be HH:MM format or null
+          organizer: formData.organizer || null,
+          is_recurring: Boolean(formData.is_recurring),
+          recurrence_type: formData.is_recurring ? formData.recurrence_type : null,
+          recurrence_interval: formData.is_recurring ? parseInt(formData.recurrence_interval) : null,
+          recurrence_end_date: (formData.is_recurring && formData.recurrence_end_date) ? formData.recurrence_end_date : null
+        };
+        
+        console.log("Cleaned data being sent:", cleanedData);
+        
+        if (editingEvent) {
+          await updateEvent(editingEvent.id, cleanedData);
+        } else {
+          await createEvent(cleanedData);
+        }
+        
+        // Reset form
+        setFormData({
+          title: '', 
+          description: '', 
+          event_time: '', 
+          organizer: '', 
+          event_date: '',
+          is_recurring: false,
+          recurrence_type: 'weekly',
+          recurrence_interval: 1,
+          recurrence_end_date: ''
+        });
+        setShowModal(false);
+        setSelectedDate(null);
+        setEditingEvent(null);
+      } catch (err) {
+        console.error("Submit error:", err);
+        // Error is already handled in createEvent function
       }
-      
-      // Reset form
-      setFormData({
-        title: '', 
-        description: '', 
-        event_time: '', 
-        organizer: '', 
-        event_date: '',
-        is_recurring: false,
-        recurrence_type: 'weekly',
-        recurrence_interval: 1,
-        recurrence_end_date: ''
+    } else {
+      console.error("Missing required fields:", {
+        title: formData.title,
+        event_date: formData.event_date
       });
-      setShowModal(false);
-      setSelectedDate(null);
-      setEditingEvent(null);
-    } catch (err) {
-      console.error("Submit error:", err);
-      // Error is already handled in createEvent function
     }
-  } else {
-    console.error("Missing required fields:", {
-      title: formData.title,
-      event_date: formData.event_date
-    });
-  }
-};
-
+  };
+  // Closing the Modal
   const closeModal = () => {
     setShowModal(false);
     setSelectedEvent(null);
@@ -365,7 +393,7 @@ const handleSubmit = async (e) => {
   };
 
   const days = getDaysInMonth(currentDate);
-
+  // Get statistics report
   const fetchStats = async () => {
     try{
       const response = await fetch(`${API_BASE_URL}/stats`);
@@ -378,7 +406,7 @@ const handleSubmit = async (e) => {
       console.error('Error fetching ststs:', err)
     }
   }
-
+  // The modal used for sharing
   const ShareModal = ({ event, isOpen, onClose}) => {
     const shareUrl = generateShareableLink(event);
     const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
@@ -444,7 +472,7 @@ const handleSubmit = async (e) => {
       </div>
     );
   };
-
+  // Handle downloading as .ics
   const handleDownload = async () => {
     try {
       const response = await fetch(`https://community-calendar-backend-4uff.onrender.com/api/calendar/export.ics`);
@@ -478,6 +506,17 @@ const handleSubmit = async (e) => {
           <p className="text-xl text-purple-100">
             Share events with your community
           </p>
+          {/* Check if the backend is waking */}
+          {backendWaking && (
+            <div className="mt-4 bg-blue-500/20 border border-blue-500/50 text-blue-100 px-4 py-3 rounded-lg flex items-center justify-center gap-3 animate-pulse">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <div className="flex flex-col items-center gap-1">
+                <span className="font-medium">Starting up backend service...</span>
+                <span className="text-sm opacity-80">This may take a few moments on first load</span>
+              </div>
+            </div>
+          )}
+          {/* Error in contacting the backend for stats/events */}
           {error && (
             <div className="mt-4 bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2">
               <AlertCircle className="w-4 h-4" />
@@ -613,6 +652,7 @@ const handleSubmit = async (e) => {
             })}
           </div>
         </div>
+        {/* Sharing Modal */}
         {showShareModal && selectedEvent && (
           <ShareModal
             event={selectedEvent}
@@ -691,6 +731,7 @@ const handleSubmit = async (e) => {
                   </div>
                 </div>
               ) : (
+                // Form for creating new Event
                 <div className="space-y-4">
                   {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg flex items-center gap-2">
@@ -762,7 +803,7 @@ const handleSubmit = async (e) => {
                       Recurring Event
                     </label>
                   </div>
-
+                  {/* If the event is recurring */}
                   {formData.is_recurring && (
                     <>
                       <div className='grid grid-cols-2 gap-4'>
