@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle, Download } from 'lucide-react';
 
 // Main App Component -- Themed For Hackclub theme
@@ -27,7 +27,9 @@ export default function CommunityCalendar() {
     recurrence_interval: 1,
     recurrence_end_date: ''
   });
-
+  const updateFormField = useCallback((field, value) => {
+    setFormData(prev => ({...prev, [field]: value}));
+  }, [])
   // -- Constants --
   const API_BASE_URL = 'https://community-calendar-backend-4uff.onrender.com/api';
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -416,114 +418,143 @@ export default function CommunityCalendar() {
 
         {/* Modals */}
         {showShareModal && selectedEvent && <ShareModal event={selectedEvent} onClose={() => setShowShareModal(false)} />}
-        {showModal && <EventModal />}
+        {showModal && (
+          <EventModal
+            onClose={closeModal}
+            selectedEvent={selectedEvent}
+            editingEvent={editingEvent}
+            onSubmit={handleSubmit}
+            error={error}
+            formData={formData}
+            updateFormField={updateFormField}
+            loading={loading}
+            onEdit={handleEditEvent}
+            onDelete={deleteEvent}
+            onShare={() => setShowShareModal(true)}
+          />
+        )}
       </div>
     </div>
   );
+}
 
-  // --- SUB-COMPONENTS ---
-  function EventModal() {
-    return (
-      <div className="fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-elevated dark:bg-dark-elevated rounded-xl p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-xl border border-black/10 dark:border-white/10 font-sans">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-2xl font-bold text-text dark:text-dark-text">
-              {selectedEvent ? 'Event Details' : editingEvent ? 'Edit Event' : 'Create New Event'}
-            </h3>
-            <button onClick={closeModal} className="p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
-          </div>
+// --- SUB-COMPONENTS ---
+function EventModal({
+  onClose,
+  selectedEvent,
+  editingEvent,
+  onSubmit,
+  error,
+  formData,
+  updateFormField,
+  loading,
+  onEdit,
+  onDelete,
+  onShare
+}) {
+  return (
+    <div className="fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-elevated dark:bg-dark-elevated rounded-xl p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-xl border border-black/10 dark:border-white/10 font-sans">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-2xl font-bold text-text dark:text-dark-text">
+            {selectedEvent ? 'Event Details' : editingEvent ? 'Edit Event' : 'Create New Event'}
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
+        </div>
 
-          {selectedEvent ? (
-            <div className="space-y-4">
-              <h4 className="font-bold text-2xl text-red mb-2">{selectedEvent.title}</h4>
-              <InfoRow icon={<Calendar className="text-red" />} text={selectedEvent.event_date} />
-              {selectedEvent.event_time && <InfoRow icon={<Clock className="text-blue" />} text={selectedEvent.event_time} />}
-              {selectedEvent.organizer && <InfoRow icon={<User className="text-green" />} text={selectedEvent.organizer} />}
-              {selectedEvent.description && <p className="text-slate dark:text-dark-slate bg-slate/5 dark:bg-white/5 p-4 rounded-lg leading-relaxed">{selectedEvent.description}</p>}
-              <div className="grid grid-cols-2 gap-3 pt-4">
-                <ActionButton onClick={() => handleEditEvent(selectedEvent)} color="blue" disabled={loading}>Edit</ActionButton>
-                <ActionButton onClick={() => deleteEvent(selectedEvent.id)} color="red" disabled={loading}>
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Delete'}
-                </ActionButton>
-                <ActionButton onClick={() => setShowShareModal(true)} color="green" className="col-span-2">
-                  <Share className='w-4 h-4 inline mr-2' /> Share
-                </ActionButton>
-              </div>
+        {selectedEvent ? (
+          <div className="space-y-4">
+            <h4 className="font-bold text-2xl text-red mb-2">{selectedEvent.title}</h4>
+            <InfoRow icon={<Calendar className="text-red" />} text={selectedEvent.event_date} />
+            {selectedEvent.event_time && <InfoRow icon={<Clock className="text-blue" />} text={selectedEvent.event_time} />}
+            {selectedEvent.organizer && <InfoRow icon={<User className="text-green" />} text={selectedEvent.organizer} />}
+            {selectedEvent.description && <p className="text-slate dark:text-dark-slate bg-slate/5 dark:bg-white/5 p-4 rounded-lg leading-relaxed">{selectedEvent.description}</p>}
+            <div className="grid grid-cols-2 gap-3 pt-4">
+              <ActionButton onClick={() => onEdit(selectedEvent)} color="blue" disabled={loading}>Edit</ActionButton>
+              <ActionButton onClick={() => onDelete(selectedEvent.id)} color="red" disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Delete'}
+              </ActionButton>
+              <ActionButton onClick={onShare} color="green" className="col-span-2">
+                <Share className='w-4 h-4 inline mr-2' /> Share
+              </ActionButton>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && <div className="bg-red/10 text-red px-4 py-3 rounded-lg font-bold flex items-center gap-2"><AlertCircle size={16} />{error}</div>}
-              <FormInput label="Event Title *" type="text" value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} placeholder="Hackathon Kick-off" required />
-              <FormTextArea label="Description" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} placeholder="Details about the event..." />
-              <div className="grid grid-cols-2 gap-4">
-                <FormInput label="Date *" type="date" value={formData.event_date} onChange={e => setFormData(p => ({ ...p, event_date: e.target.value }))} required />
-                <FormInput label="Time" type="time" value={formData.event_time} onChange={e => setFormData(p => ({ ...p, event_time: e.target.value }))} />
-              </div>
-              <FormInput label="Organizer" type="text" value={formData.organizer} onChange={e => setFormData(p => ({ ...p, organizer: e.target.value }))} placeholder="e.g., Coding Club" />
-              
-              <div className="pt-2">
-                <label className='flex items-center gap-3 font-bold text-slate dark:text-dark-slate'>
-                  <input type="checkbox" checked={formData.is_recurring} onChange={e => setFormData(p => ({ ...p, is_recurring: e.target.checked }))} className='w-5 h-5 text-red border-2 border-slate/30 dark:border-white/30 rounded focus:ring-red bg-transparent' />
-                  Recurring Event
-                </label>
-              </div>
-              {formData.is_recurring && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate/5 dark:bg-white/5 rounded-lg border border-slate/10 dark:border-white/10">
-                  <FormInput label="Interval" type="number" min="1" value={formData.recurrence_interval} onChange={e => setFormData(p => ({ ...p, recurrence_interval: parseInt(e.target.value) || 1 }))} />
-                  <div>
-                    <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">Period</label>
-                    <select value={formData.recurrence_type} onChange={e => setFormData(p => ({ ...p, recurrence_type: e.target.value }))} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium">
-                      <option value="daily">Days</option>
-                      <option value="weekly">Weeks</option>
-                      <option value="monthly">Months</option>
-                      <option value="yearly">Years</option>
-                    </select>
-                  </div>
-                  <FormInput label="End Date" type="date" value={formData.recurrence_end_date} onChange={e => setFormData(p => ({ ...p, recurrence_end_date: e.target.value }))} />
+          </div>
+        ) : (
+          <form onSubmit={onSubmit} className="space-y-4">
+            {error && <div className="bg-red/10 text-red px-4 py-3 rounded-lg font-bold flex items-center gap-2"><AlertCircle size={16} />{error}</div>}
+            <FormInput label="Event Title *" type="text" value={formData.title} field="title" updateField={updateFormField} placeholder="Hackathon Kick-off" required />
+            <FormTextArea label="Description" value={formData.description} field="description" updateField={updateFormField} placeholder="Details about the event..." />
+            <div className="grid grid-cols-2 gap-4">
+              <FormInput label="Date *" type="date" value={formData.event_date} field="event_date" updateField={updateFormField} required />
+              <FormInput label="Time" type="time" value={formData.event_time} field="event_time" updateField={updateFormField} />
+            </div>
+            <FormInput label="Organizer" type="text" value={formData.organizer} field="organizer" updateField={updateFormField} placeholder="e.g., Coding Club" />
+            
+            <div className="pt-2">
+              <label className='flex items-center gap-3 font-bold text-slate dark:text-dark-slate'>
+                <input type="checkbox" checked={formData.is_recurring} onChange={e => updateFormField('is_recurring', e.target.checked)} className='w-5 h-5 text-red border-2 border-slate/30 dark:border-white/30 rounded focus:ring-red bg-transparent' />
+                Recurring Event
+              </label>
+            </div>
+            {formData.is_recurring && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate/5 dark:bg-white/5 rounded-lg border border-slate/10 dark:border-white/10">
+                <FormInput label="Interval" type="number" min="1" value={formData.recurrence_interval} field="recurrence_interval" updateField={(field, value) => updateFormField(field, parseInt(value) || 1)} />
+                <div>
+                  <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">Period</label>
+                  <select value={formData.recurrence_type} onChange={e => updateFormField('recurrence_type', e.target.value)} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium">
+                    <option value="daily">Days</option>
+                    <option value="weekly">Weeks</option>
+                    <option value="monthly">Months</option>
+                    <option value="yearly">Years</option>
+                  </select>
                 </div>
-              )}
-
-              <div className="pt-4 flex justify-end gap-3">
-                <ActionButton type="button" onClick={closeModal} color="muted">Cancel</ActionButton>
-                <ActionButton type="submit" color="red" disabled={loading}>
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingEvent ? 'Save Changes' : 'Create Event')}
-                </ActionButton>
+                <FormInput label="End Date" type="date" value={formData.recurrence_end_date} field="recurrence_end_date" updateField={updateFormField} />
               </div>
-            </form>
-          )}
+            )}
+
+            <div className="pt-4 flex justify-end gap-3">
+              <ActionButton type="button" onClick={onClose} color="muted">Cancel</ActionButton>
+              <ActionButton type="submit" color="red" disabled={loading}>
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingEvent ? 'Save Changes' : 'Create Event')}
+              </ActionButton>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ShareModal({ event, onClose }) {
+  const shareUrl = `${window.location.origin}${window.location.pathname}?id=${event.id}`;
+  const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      alert('Link copied!');
+    }, (err) => {
+      console.error('Failed to copy:', err);
+    });
+  };
+  
+  return (
+    <div className='fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-60 p-4'>
+      <div className='bg-elevated dark:bg-dark-elevated rounded-xl p-6 max-w-sm w-full shadow-xl border border-black/10 dark:border-white/10'>
+        <div className='flex justify-between items-center mb-4'>
+          <h3 className='text-xl font-bold text-text dark:text-dark-text'>Share Event</h3>
+          <button onClick={onClose} className='p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors'><X className='w-5 h-5'/></button>
+        </div>
+        <div className='space-y-3'>
+          <ShareButton onClick={copyToClipboard} icon={<Share className='text-red' />}>Copy Link</ShareButton>
+          <ShareButton href={`mailto:?subject=${encodeURIComponent(`Invitation: ${event.title}`)}&body=${encodeURIComponent(`${shareText}
+
+View event details: ${shareUrl}`)}`} icon={<Mail className='text-blue' />}>Share via Email</ShareButton>
+          <ShareButton href={`https://wa.me/?text=${encodeURIComponent(`${shareText}
+${shareUrl}`)}`} icon={<MessageCircle className='text-green' />}>Share via WhatsApp</ShareButton>
         </div>
       </div>
-    );
-  }
-
-  function ShareModal({ event, onClose }) {
-    const shareUrl = `${window.location.origin}${window.location.pathname}?id=${event.id}`;
-    const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
-
-    const copyToClipboard = () => {
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        alert('Link copied!');
-      }, (err) => {
-        console.error('Failed to copy:', err);
-      });
-    };
-    
-    return (
-      <div className='fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-60 p-4'>
-        <div className='bg-elevated dark:bg-dark-elevated rounded-xl p-6 max-w-sm w-full shadow-xl border border-black/10 dark:border-white/10'>
-          <div className='flex justify-between items-center mb-4'>
-            <h3 className='text-xl font-bold text-text dark:text-dark-text'>Share Event</h3>
-            <button onClick={onClose} className='p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors'><X className='w-5 h-5'/></button>
-          </div>
-          <div className='space-y-3'>
-            <ShareButton onClick={copyToClipboard} icon={<Share className='text-red' />}>Copy Link</ShareButton>
-            <ShareButton href={`mailto:?subject=${encodeURIComponent(`Invitation: ${event.title}`)}&body=${encodeURIComponent(`${shareText}\n\nView event details: ${shareUrl}`)}`} icon={<Mail className='text-blue' />}>Share via Email</ShareButton>
-            <ShareButton href={`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`} icon={<MessageCircle className='text-green' />}>Share via WhatsApp</ShareButton>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 }
 
 // --- HELPER & STYLED COMPONENTS ---
@@ -557,17 +588,17 @@ const ActionButton = ({ children, color, className = '', ...props }) => {
   );
 };
 
-const FormInput = ({ label, ...props }) => (
+const FormInput = ({ label, field, updateField, ...props }) => (
   <div>
     <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">{label}</label>
-    <input {...props} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium" />
+    <input {...props} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium"  onChange={e => updateField(field, e.target.value)}/>
   </div>
 );
 
-const FormTextArea = ({ label, ...props }) => (
+const FormTextArea = ({ label, field, updateField, ...props }) => (
   <div>
     <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">{label}</label>
-    <textarea {...props} rows={3} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium" />
+    <textarea {...props} rows={3} onChange={e=> updateField(field, e.target.value)} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium" />
   </div>
 );
 
