@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle, Download } from 'lucide-react';
 
+// Main App Component -- Themed For Hackclub theme
 export default function CommunityCalendar() {
+  // -- State Management --
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -13,7 +15,7 @@ export default function CommunityCalendar() {
   const [editingEvent, setEditingEvent] = useState(null);
   const [stats, setStats] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [shareModalDate, setShareModalData] = useState(null);
+  const [theme, setTheme] = useState('dark');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -26,35 +28,28 @@ export default function CommunityCalendar() {
     recurrence_end_date: ''
   });
 
+  // -- Constants --
   const API_BASE_URL = 'https://community-calendar-backend-4uff.onrender.com/api';
-
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // API Functions
-  // Fetch the events from backend again
-  const refreshEvent = async () =>{
+  // -- API Function --
+  const refreshEvents = async () => {
     try {
       setError(null);
       await fetchEvents();
     } catch (err) {
-      setError('Failed to refresh events')
-      console.error('Error refreshing events:', err)
+      setError('Failed to refresh events');
+      console.error('Error refreshing events:', err);
     }
   }
-  // Fetch events from frontend
+
   const fetchEvents = async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await fetch(`${API_BASE_URL}/events`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch events');
-      }
+      if (!response.ok) throw new Error("Failed to fetch Events!");
       const data = await response.json();
       setEvents(data);
     } catch (err) {
@@ -64,57 +59,41 @@ export default function CommunityCalendar() {
       setLoading(false);
     }
   };
-  // Create A new Event
+
   const createEvent = async (eventData) => {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log("Sending POST request with:", eventData);
-      
       const response = await fetch(`${API_BASE_URL}/events`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventData),
       });
-      
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("Server responded with error:", errorData);
         throw new Error(errorData.detail || 'Failed to create event');
       }
-      
       const newEvent = await response.json();
-      console.log("Event created successfully:", newEvent);
       setEvents(prev => [...prev, newEvent]);
-      await refreshEvent()
+      await refreshEvents();
       return newEvent;
     } catch (err) {
-      console.error('Error creating event:', err);
       setError('Failed to create event: ' + err.message);
       throw err;
     } finally {
       setLoading(false);
     }
   };
-  // Delete an Event
+
   const deleteEvent = async (eventId) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete event');
-      }
-      
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete event');
       setEvents(prev => prev.filter(event => event.id !== eventId));
-      closeModal()
-      await refreshEvent()
+      closeModal();
+      await refreshEvents();
     } catch (err) {
       setError('Failed to delete event');
       console.error('Error deleting event:', err);
@@ -122,39 +101,146 @@ export default function CommunityCalendar() {
       setLoading(false);
     }
   };
-  // Make Changes to an Event
+
   const updateEvent = async (eventId, eventData) => {
     try {
       setLoading(true);
       setError(null);
       const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventData)
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to update event');
       }
-
       const updatedEvent = await response.json();
-      setEvents(prev => prev.map(event =>
-        event.id === eventId ? updatedEvent : event
-      ));
-      await refreshEvent()
+      setEvents(prev => prev.map(event => event.id === eventId ? updatedEvent : event));
+      await refreshEvents();
       return updatedEvent;
     } catch (err) {
       setError('Failed to update event');
-      console.error('Error updating event:', err);
       throw err;
     } finally {
       setLoading(false);
     }
   };
-  // Handle Edits in Events (Used mostly in the form)
+
+  const fetchStats = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/stats`);
+      if (response.ok) {
+        const statsData = await response.json();
+        setStats(statsData);
+      }
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+    }
+  };
+
+  // -- LIFECYCLE Hooks --
+  useEffect(() => {
+    let timeoutId;
+    async function initBackend() {
+      setLoading(true);
+      timeoutId = setTimeout(() => setBackendWaking(true), 200);
+      try {
+        const ping = await fetch("https://community-calendar-backend-4uff.onrender.com/");
+        if (!ping.ok) throw new Error("Backend not responding");
+        clearTimeout(timeoutId);
+        setBackendWaking(false);
+        fetchEvents();
+        fetchStats();
+      } catch (err) {
+        console.error(err);
+        setError("Could not connect to the backend service.");
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
+    }
+    initBackend();
+  }, []);
+
+  useEffect(() => {
+    if (events.length >= 0) {
+      fetchStats();
+    }
+  }, [events]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('id');
+    if (eventId && events.length > 0) {
+      const eventToOpen = events.find(event => event.id.toString() === eventId);
+      if (eventToOpen) {
+        setSelectedEvent(eventToOpen);
+        setShowModal(true);
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [events]);
+  
+  // NEW: Effect to handle theme changes
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+  }, [theme]);
+
+  // --- UTILITY & HELPER FUNCTIONS ---
+  const getDaysInMonth = (date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    const days = [];
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+
+    for (let i = startingDayOfWeek; i > 0; i--) {
+      days.push({ day: prevMonthLastDay - i + 1, isCurrentMonth: false, date: new Date(year, month - 1, prevMonthLastDay - i + 1) });
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push({ day, isCurrentMonth: true, date: new Date(year, month, day) });
+    }
+    const totalCells = Math.ceil(days.length / 7) * 7;
+    let nextDay = 1;
+    while (days.length < totalCells) {
+      days.push({ day: nextDay, isCurrentMonth: false, date: new Date(year, month + 1, nextDay) });
+      nextDay++;
+    }
+    return days;
+  };
+
+  const navigateMonth = (direction) => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setMonth(prev.getMonth() + direction);
+      return newDate;
+    });
+  };
+
+  const formatDate = (date) => date.toISOString().split('T')[0];
+  const isToday = (date) => new Date().toDateString() === date.toDateString();
+  const getEventsForDate = (date) => events.filter(event => event.event_date === formatDate(date));
+
+  // --- EVENT HANDLERS ---
+  const handleDayClick = (dayData) => {
+    setSelectedDate(dayData.date);
+    setFormData(prev => ({ ...prev, event_date: formatDate(dayData.date) }));
+    setSelectedEvent(null);
+    setShowModal(true);
+  };
+
+  const handleEventClick = (event, e) => {
+    e.stopPropagation();
+    setSelectedEvent(event);
+    setShowModal(true);
+  };
+
   const handleEditEvent = (event) => {
     setEditingEvent(event);
     setFormData({
@@ -172,479 +258,154 @@ export default function CommunityCalendar() {
     setShowModal(true);
   };
 
-  // Load events on component mount as well as check if the backend is on or not
-  useEffect(() => {
-    let timeoutId;
-
-    async function initBackend() {
-      setLoading(true);
-      setBackendWaking(false);
-
-      timeoutId = setTimeout(() => {
-        setBackendWaking(true)
-      }, 200)
-      try {
-        const ping = await fetch("https://community-calendar-0ymp.onrender.com/")
-        if (!ping.ok) throw new Error("Backend not responding")
-        
-        clearTimeout(timeoutId)
-        setBackendWaking(false);
-
-        fetchEvents();
-        fetchStats();
-      } catch (err) {
-        console.error(err);
-      }finally {
-        clearTimeout(timeoutId)
-        setLoading(false)
-      }
-    }
-    initBackend();
-
-
-  }, []);
-  // Fetch stats
-  useEffect(() => {
-    if (events.length >= 0) {
-      fetchStats();
-    }
-  }, [events])
-//  Check if link opened is a shared event link and opens the event if it is
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const eventId = params.get('id');
-
-    if (eventId && eventId.length > 0) {
-      const eventToOpen = events.find(event => event.id.toString() === eventId);
-
-      if (eventToOpen) {
-        setSelectedEvent(eventToOpen);
-        setShowModal(true);
-      };
-
-      // Remove the id param fro url without reloading
-      params.delete('id');
-      const newUrl = "/"
-      window.history.replaceState({}, '', newUrl)
-    };
-  }, [events]);
-  // Generates a link that can be shared to other users
-  const generateShareableLink = (event) => {
-    const baseUrl = window.location.origin;
-    const eventParams = new URLSearchParams({
-      id: event.id
-    });
-    return `${baseUrl}/share-event?${eventParams.toString()}`;
-  }
-
-  // Get days in month
-  const getDaysInMonth = (date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-
-    const days = [];
-    
-    // Previous month's trailing days
-    const prevMonth = new Date(year, month - 1, 0);
-    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-      days.push({
-        day: prevMonth.getDate() - i,
-        isCurrentMonth: false,
-        date: new Date(year, month - 1, prevMonth.getDate() - i)
-      });
-    }
-    
-    // Current month's days
-    for (let day = 1; day <= daysInMonth; day++) {
-      days.push({
-        day,
-        isCurrentMonth: true,
-        date: new Date(year, month, day)
-      });
-    }
-    
-    // Next month's leading days
-    const totalCells = Math.ceil(days.length / 7) * 7;
-    let nextDay = 1;
-    for (let i = days.length; i < totalCells; i++) {
-      days.push({
-        day: nextDay,
-        isCurrentMonth: false,
-        date: new Date(year, month + 1, nextDay)
-      });
-      nextDay++;
-    }
-    
-    return days;
-  };
-  // Navigate between months
-  const navigateMonth = (direction) => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      newDate.setMonth(prev.getMonth() + direction);
-      return newDate;
-    });
-  };
-  // Formating the date
-  const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
-  };
-  // To check which date is today
-  const isToday = (date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
-  // Get all events for a specific date
-  const getEventsForDate = (date) => {
-    return events.filter(event => event.event_date === formatDate(date));
-  };
-  // Handle the click of a day (Used to open create event form with date already filled in)
-  const handleDayClick = (dayData) => {
-    setSelectedDate(dayData.date);
-    setFormData(prev => ({ ...prev, event_date: formatDate(dayData.date) }));
-    setSelectedEvent(null);
-    setShowModal(true);
-  };
-  // Handle the click of an Event
-  const handleEventClick = (event, e) => {
-    e.stopPropagation();
-    setSelectedEvent(event);
-    setShowModal(true);
-  };
-
-  // Handling the Submit
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Debug: Log the form data being sent
-    console.log("Form data being sent:", formData);
-    
     if (formData.title && formData.event_date) {
       try {
-        // Clean the data before sending
         const cleanedData = {
           title: formData.title.trim(),
           description: formData.description || null,
-          event_date: formData.event_date, // Should be YYYY-MM-DD format
-          event_time: formData.event_time || null, // Should be HH:MM format or null
+          event_date: formData.event_date,
+          event_time: formData.event_time || null,
           organizer: formData.organizer || null,
           is_recurring: Boolean(formData.is_recurring),
           recurrence_type: formData.is_recurring ? formData.recurrence_type : null,
           recurrence_interval: formData.is_recurring ? parseInt(formData.recurrence_interval) : null,
           recurrence_end_date: (formData.is_recurring && formData.recurrence_end_date) ? formData.recurrence_end_date : null
         };
-        
-        console.log("Cleaned data being sent:", cleanedData);
-        
         if (editingEvent) {
           await updateEvent(editingEvent.id, cleanedData);
         } else {
           await createEvent(cleanedData);
         }
-        
-        // Reset form
-        setFormData({
-          title: '', 
-          description: '', 
-          event_time: '', 
-          organizer: '', 
-          event_date: '',
-          is_recurring: false,
-          recurrence_type: 'weekly',
-          recurrence_interval: 1,
-          recurrence_end_date: ''
-        });
-        setShowModal(false);
-        setSelectedDate(null);
-        setEditingEvent(null);
+        closeModal();
       } catch (err) {
         console.error("Submit error:", err);
-        // Error is already handled in createEvent function
       }
-    } else {
-      console.error("Missing required fields:", {
-        title: formData.title,
-        event_date: formData.event_date
-      });
     }
   };
-  // Closing the Modal
+
   const closeModal = () => {
     setShowModal(false);
     setSelectedEvent(null);
     setSelectedDate(null);
     setEditingEvent(null);
     setError(null);
-    setFormData({ 
-      title: '', 
-      description: '',
-       event_time: '',
-       organizer: '', 
-       event_date: '',
-       is_recurring: false,
-       recurrence_type: 'weekly',
-       recurrence_interval: 1,
-       recurrence_end_date: ''
-      });
+    setFormData({ title: '', description: '', event_time: '', organizer: '', event_date: '', is_recurring: false, recurrence_type: 'weekly', recurrence_interval: 1, recurrence_end_date: '' });
+  };
+  
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/calendar/export.ics`);
+      if (!response.ok) throw new Error('Failed to export Calendar');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "community-calendar.ics";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setError("Could not download calendar");
+    }
+  };
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
   };
 
   const days = getDaysInMonth(currentDate);
-  // Get statistics report
-  const fetchStats = async () => {
-    try{
-      const response = await fetch(`${API_BASE_URL}/stats`);
-      if (response.ok) {
-        const statsData = await response.json();
-        setStats(statsData);
-        return statsData;
-      }
-    } catch (err) {
-      console.error('Error fetching ststs:', err)
-    }
-  }
-  // The modal used for sharing
-  const ShareModal = ({ event, isOpen, onClose}) => {
-    const shareUrl = generateShareableLink(event);
-    const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
+  const eventColors = ['bg-orange', 'bg-yellow', 'bg-green', 'bg-cyan', 'bg-blue', 'bg-purple'];
 
-    const copyToClipboard = async () => {
-      try{
-        await navigator.clipboard.writeText(shareUrl)
-        alert('Link copied to clipboard');
-      } catch (err) {
-        console.error('failed to copy:', err)
-      }
-    };
-
-    const shareViaEmail = () => {
-      const subject = encodeURIComponent(`Invitation: ${event.title}`);
-      const body = encodeURIComponent(`${shareText}\n\nView event details: ${shareUrl}`);
-      window.open(`mailto:?subject=${subject}&body=${body}`)
-    };
-
-    const shareViaWhatsApp =() => {
-      const text = encodeURIComponent(`${shareText}\n${shareUrl}`)
-      window.open(`https://wa.me/?text=${text}`)
-    };
-
-    if (!isOpen) return null;
-
-    return (
-      <div className='fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-60 p-4'>
-        <div className='bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl'>
-          <div className='flex justify-between items-center mb-4'>
-            <h3 className='text-xl font-bold text-gray-800'>Share Event</h3>
-            <button onClick={onClose} className='p-2 rounded-full hover:bg-gray-100'>
-              <X className='w-5 h-5'/>
-            </button>
-          </div>
-
-          <div className='space-y-3'>
-            <button
-              onClick={copyToClipboard}
-              className='w-full p-3 border boder-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
-            >
-              <Share className='w-5 h-5 text-purple-500' />
-              Copy Link
-            </button>
-
-            <button
-              onClick={shareViaEmail}
-              className='w-full p-3 border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
-            >
-              <Mail className='w-5 h-5 text-blue-500' />
-              Share Via Email
-            </button>
-
-            <button
-              onClick={shareViaWhatsApp}  
-              className='w-full p-3 border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-3'
-            >
-              <MessageCircle className='w-5 h-5 text-green-500'/>
-              Share via WhatsApp
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-  // Handle downloading as .ics
-  const handleDownload = async () => {
-    try {
-      const response = await fetch(`https://community-calendar-backend-4uff.onrender.com/api/calendar/export.ics`);
-      if (!response.ok) throw new Error('Failed to export Calendar');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "calender.ics";
-      document.body.append(a);
-      a.click();
-      a.remove();
-
-      window.URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error(err)
-      alert("Could not download calendar")
-    }
-  }
-
+  // -- RENDER --
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800">
+    <div className="min-h-screen bg-background dark:bg-dark-background font-sans text-text dark:text-dark-text transition-colors duration-300">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
+        <header className="text-center mb-10 relative">
+          <h1 className="text-5xl md:text-6xl font-bold text-red mb-3 tracking-tight">
             Community Calendar
           </h1>
-          <p className="text-xl text-purple-100">
-            Share events with your community
-          </p>
-          {/* Check if the backend is waking */}
+          <p className="text-xl text-slate dark:text-dark-slate font-medium">
+            Share and discover events in your community.
+          </p>          
           {backendWaking && (
-            <div className="mt-4 bg-blue-500/20 border border-blue-500/50 text-blue-100 px-4 py-3 rounded-lg flex items-center justify-center gap-3 animate-pulse">
+            <div className="mt-6 bg-orange/10 border-2 border-orange/30 text-orange px-6 py-4 rounded-xl flex items-center justify-center gap-3 max-w-md mx-auto">
               <Loader2 className="w-5 h-5 animate-spin" />
-              <div className="flex flex-col items-center gap-1">
-                <span className="font-medium">Starting up backend service...</span>
-                <span className="text-sm opacity-80">This may take a few moments on first load</span>
-              </div>
+              <span className="font-bold">Waking up the server... hang tight!</span>
             </div>
           )}
-          {/* Error in contacting the backend for stats/events */}
           {error && (
-            <div className="mt-4 bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-2 rounded-lg flex items-center justify-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {error}
+            <div className="mt-6 bg-red/10 border-2 border-red/30 text-red px-6 py-4 rounded-xl flex items-center justify-center gap-3 max-w-md mx-auto">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-bold">{error}</span>
             </div>
           )}
-        </div>
+        </header>
 
         {/* Stats Section */}
         {stats && (
-          <div className='grid grid-cols-1 md:grid-cols-3 gap-6 mb-8'>
-            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
-              <div className='flex items-center gap-3'>
-                <Calendar className='w-8 h-8 text-orange-300' />
-                <div>
-                  <p className='text-white/80 text-sm'>Total Events</p>
-                  <p className='text-3xl font-bold text-white'>{stats.total_events}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
-              <div className='flex items-center gap-3'>
-                <Clock className='w-8 h-8 text-blue-300' />
-                <div>
-                  <p className='text-white/80 text-sm'>This Month</p>
-                  <p className='text-3xl font-bold text-white'>{stats.events_this_month}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className='bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20'>
-              <div className='flex items-center gap-3'>
-                <User className='w-8 h-8 text-green-300' />
-                <div>
-                  <p className='text-white/80 text-sm'>Upcoming (30 Days)</p>
-                  <p className='text-3xl font-bold text-white'>{stats.upcoming_events}</p>
-                </div>
-              </div>
-            </div>
+          <div className='grid grid-cols-1 md:grid-cols-3 gap-6 mb-10'>
+            <StatCard icon={<Calendar className='w-8 h-8 text-red' />} title="Total Events" value={stats.total_events} color="red" />
+            <StatCard icon={<Clock className='w-8 h-8 text-blue' />} title="This Month" value={stats.events_this_month} color="blue" />
+            <StatCard icon={<User className='w-8 h-8 text-green' />} title="Upcoming (30 Days)" value={stats.upcoming_events} color="green" />
           </div>
         )}
 
         {/* Controls */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-elevated dark:bg-dark-elevated rounded-xl p-4 shadow-md border border-black/10 dark:border-white/10">
           <div className="flex items-center gap-4 mb-4 md:mb-0">
-            <button
-              onClick={() => navigateMonth(-1)}
-              className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 text-white"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-2xl font-semibold text-white">
+            <NavButton onClick={() => navigateMonth(-1)}><ChevronLeft className="w-6 h-6" /></NavButton>
+            <h2 className="text-3xl font-bold text-text dark:text-dark-text w-64 text-center">
               {months[currentDate.getMonth()]} {currentDate.getFullYear()}
             </h2>
-            <button
-              onClick={() => navigateMonth(1)}
-              className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 text-white"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
+            <NavButton onClick={() => navigateMonth(1)}><ChevronRight className="w-6 h-6" /></NavButton>
           </div>
           <div className='flex items-center gap-4'>
-              <button
-                onClick={handleDownload}
-                className='flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 border border-emerald-400/20 '
-              >
-                <Download size={16} className='transition-transform duration-300 group-hover:translate-y-0.5'/>
-                Export Calendar
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedEvent(null);
-                  setSelectedDate(null);
-                  setShowModal(true);
-                }}
-                disabled={loading}
-                className="flex items-center gap-2 bg-gradient-to-r from-orange-400 to-pink-500 hover:from-orange-500 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                Add Event
-              </button>
-            </div>
+            <ActionButton onClick={handleDownload} color="green" disabled={loading}>
+              <Download size={18}/> Export
+            </ActionButton>
+            <ActionButton onClick={() => setShowModal(true)} color="red" disabled={loading}>
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />} Add Event
+            </ActionButton>
           </div>
+        </div>
 
-        {/* Calendar */}
-        <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl overflow-hidden">
-          {/* Calendar Header */}
-          <div className="grid grid-cols-7 bg-gradient-to-r from-purple-600 to-indigo-600">
+        {/* Calendar Grid */}
+        <div className="bg-elevated dark:bg-dark-elevated rounded-xl shadow-lg overflow-hidden border border-black/10 dark:border-white/10">
+          <div className="grid grid-cols-7 bg-slate dark:bg-dark-slate text-background dark:text-dark-text">
             {weekdays.map(day => (
-              <div key={day} className="p-4 text-center text-white font-semibold text-lg">
-                {day}
-              </div>
+              <div key={day} className="p-4 text-center font-bold text-lg tracking-wide">{day}</div>
             ))}
           </div>
-
-          {/* Calendar Grid */}
           <div className="grid grid-cols-7">
             {days.map((dayData, index) => {
               const dayEvents = getEventsForDate(dayData.date);
+              const isTodayFlag = isToday(dayData.date);
               return (
                 <div
                   key={index}
                   onClick={() => handleDayClick(dayData)}
-                  className={`
-                    min-h-32 p-3 border border-gray-100 cursor-pointer transition-all duration-300 hover:bg-gradient-to-br hover:from-purple-50 hover:to-indigo-50 hover:scale-105 hover:shadow-lg hover:z-10 relative
-                    ${!dayData.isCurrentMonth ? 'text-gray-400 bg-gray-50/50' : ''}
-                    ${isToday(dayData.date) ? 'bg-gradient-to-br from-purple-500 to-indigo-500 text-white' : 'bg-white'}
-                  `}
+                  className={`min-h-36 p-2 border-t border-r border-black/5 dark:border-white/10 cursor-pointer transition-colors duration-200 group relative ${!dayData.isCurrentMonth ? 'bg-slate/5 dark:bg-white/5 text-muted dark:text-dark-muted' : 'bg-background dark:bg-dark-background hover:bg-red/5 dark:hover:bg-red/10'}`}
                 >
-                  <div className={`font-semibold text-lg mb-2 ${isToday(dayData.date) ? 'text-white' : ''}`}>
+                  <span className={`text-lg font-bold ${isTodayFlag ? 'bg-red text-white rounded-full flex items-center justify-center w-8 h-8' : ''}`}>
                     {dayData.day}
-                  </div>
-                  <div className="space-y-1">
-                    {dayEvents.slice(0, 3).map(event => (
+                  </span>
+                  <div className="space-y-1 mt-1">
+                    {dayEvents.slice(0, 3).map((event, i) => (
                       <div
                         key={event.id}
                         onClick={(e) => handleEventClick(event, e)}
-                        className="bg-gradient-to-r from-orange-400 to-pink-500 text-white text-xs p-2 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md"
+                        className={`${eventColors[i % eventColors.length]} text-white text-xs p-1.5 rounded-md cursor-pointer truncate transition-transform hover:scale-105`}
                       >
-                        <div className="font-medium truncate">{event.title}{event.is_recurring && <span className='text-yellow-200'>🔄</span>}</div>
-                        {event.event_time && <div className="opacity-90">{event.event_time}</div>}
+                        {event.title}
                       </div>
                     ))}
                     {dayEvents.length > 3 && (
-                      <div className="text-xs text-gray-500 font-medium">
-                        +{dayEvents.length - 3} more
-                      </div>
+                      <div className="text-xs text-slate dark:text-dark-slate font-bold pt-1">+ {dayEvents.length - 3} more</div>
                     )}
                   </div>
                 </div>
@@ -652,245 +413,175 @@ export default function CommunityCalendar() {
             })}
           </div>
         </div>
-        {/* Sharing Modal */}
-        {showShareModal && selectedEvent && (
-          <ShareModal
-            event={selectedEvent}
-            isOpen={(showShareModal)}
-            onClose={() => setShowShareModal(false)}
-          />
-        )}
-        {/* Modal */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-bold text-gray-800">
-                  {selectedEvent ? 'Event Details' : editingEvent ? 'Edit Event' : 'Create New Event'}
-                </h3>
-                <button
-                  onClick={closeModal}
-                  className="p-2 rounded-full hover:bg-gray-100 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              {selectedEvent ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <Calendar className="w-5 h-5 text-purple-500" />
-                    <span className="font-semibold">{selectedEvent.event_date}</span>
-                  </div>
-                  {selectedEvent.event_time && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <Clock className="w-5 h-5 text-purple-500" />
-                      <span>{selectedEvent.event_time}</span>
-                    </div>
-                  )}
-                  {selectedEvent.organizer && (
-                    <div className="flex items-center gap-3 text-gray-700">
-                      <User className="w-5 h-5 text-purple-500" />
-                      <span>{selectedEvent.organizer}</span>
-                    </div>
-                  )}
-                  <div>
-                    <h4 className="font-semibold text-lg text-gray-800 mb-2">
-                      {selectedEvent.title}
-                    </h4>
-                    <p className="text-gray-600">{selectedEvent.description}</p>
-                  </div>
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={closeModal}
-                      className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all"
-                    >
-                      Close
-                    </button>
-                    <button
-                      onClick={() => setShowShareModal(true)}
-                      className='flex-1 py-3 px-6 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg'
-                    >
-                      <Share className='w-5 h-5 inline mr-2' />
-                      Share Event
-                    </button>
-                    <button
-                      onClick={() => handleEditEvent(selectedEvent)}
-                      disabled={loading}
-                      className='flex-1 py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed'
-                    >
-                      Edit Event
-                    </button>
-                    <button
-                      onClick={() => deleteEvent(selectedEvent.id)}
-                      disabled={loading}
-                      className="flex-1 py-3 px-6 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Delete Event'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Form for creating new Event
-                <div className="space-y-4">
-                  {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
-                      {error}
-                    </div>
-                  )}
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Event Title *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.title}
-                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      placeholder="Enter event title"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      rows={3}
-                      placeholder="Event description"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Date *
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.event_date}
-                      onChange={(e) => setFormData(prev => ({ ...prev, event_date: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Time
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.event_time}
-                      onChange={(e) => setFormData(prev => ({ ...prev, event_time: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className='flex items-center gap-3 text-sm font-medium text-gray-700'>
-                      <input 
-                        type="checkbox"
-                        checked={formData.is_recurring}
-                        onChange={(e) => setFormData(prev => ({ ...prev, is_recurring: e.target.checked}))}
-                        className='w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500'
-                      />
-                      Recurring Event
-                    </label>
-                  </div>
-                  {/* If the event is recurring */}
-                  {formData.is_recurring && (
-                    <>
-                      <div className='grid grid-cols-2 gap-4'>
-                        <div>
-                          <label className='block text-sm font-medium text-gray-700 mb-2'>
-                            Repeat Every
-                          </label>
-                          <input 
-                            type="number"
-                            min="1"
-                            max="365"
-                            value={formData.recurrence_interval}
-                            onChange={(e) => setFormData(prev => ({ ...prev, recurrence_interval: parseInt(e.target.value) || 1}))}
-                            className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
-                          />
-                        </div>
-
-                        <div>
-                          <label className='block text-sm font-medium text-gray-700 mb-2'>
-                            Period
-                          </label>
-                          <select
-                            value={formData.recurrence_type}
-                            onChange={(e) => setFormData( prev => ({...prev, recurrence_type:e.target.value}))}
-                            className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
-                          >
-                            <option value="daily">Day(s)</option>
-                            <option value="weekly">Week(s)</option>
-                            <option value="monthly">Month(s)</option>
-                            <option value="yearly">Year(s)</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className='block text-sm font-medium text-gray-700 mb-2'>
-                          End date (optional)
-                        </label>
-                        <input
-                          type="date"
-                          value={formData.recurrence_end_date}
-                          onChange={(e) => setFormData(prev => ({ ...prev, recurrence_end_date: e.target.value}))}
-                          className='w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all'
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Organizer
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.organizer}
-                      onChange={(e) => setFormData(prev => ({ ...prev, organizer: e.target.value }))}
-                      className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                      placeholder="Your name or organization"
-                    />
-                  </div>
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      disabled={loading}
-                      className="flex-1 py-3 px-6 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSubmit}
-                      disabled={loading || !formData.title || !formData.event_date}
-                      className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                    >
-                      {loading ? (
-                        <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                      ) : (
-                        editingEvent ? 'Update Event' : 'Create Event'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Modals */}
+        {showShareModal && selectedEvent && <ShareModal event={selectedEvent} onClose={() => setShowShareModal(false)} />}
+        {showModal && <EventModal />}
       </div>
     </div>
   );
+
+  // --- SUB-COMPONENTS ---
+  function EventModal() {
+    return (
+      <div className="fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-elevated dark:bg-dark-elevated rounded-xl p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-xl border border-black/10 dark:border-white/10 font-sans">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-2xl font-bold text-text dark:text-dark-text">
+              {selectedEvent ? 'Event Details' : editingEvent ? 'Edit Event' : 'Create New Event'}
+            </h3>
+            <button onClick={closeModal} className="p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
+          </div>
+
+          {selectedEvent ? (
+            <div className="space-y-4">
+              <h4 className="font-bold text-2xl text-red mb-2">{selectedEvent.title}</h4>
+              <InfoRow icon={<Calendar className="text-red" />} text={selectedEvent.event_date} />
+              {selectedEvent.event_time && <InfoRow icon={<Clock className="text-blue" />} text={selectedEvent.event_time} />}
+              {selectedEvent.organizer && <InfoRow icon={<User className="text-green" />} text={selectedEvent.organizer} />}
+              {selectedEvent.description && <p className="text-slate dark:text-dark-slate bg-slate/5 dark:bg-white/5 p-4 rounded-lg leading-relaxed">{selectedEvent.description}</p>}
+              <div className="grid grid-cols-2 gap-3 pt-4">
+                <ActionButton onClick={() => handleEditEvent(selectedEvent)} color="blue" disabled={loading}>Edit</ActionButton>
+                <ActionButton onClick={() => deleteEvent(selectedEvent.id)} color="red" disabled={loading}>
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Delete'}
+                </ActionButton>
+                <ActionButton onClick={() => setShowShareModal(true)} color="green" className="col-span-2">
+                  <Share className='w-4 h-4 inline mr-2' /> Share
+                </ActionButton>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && <div className="bg-red/10 text-red px-4 py-3 rounded-lg font-bold flex items-center gap-2"><AlertCircle size={16} />{error}</div>}
+              <FormInput label="Event Title *" type="text" value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} placeholder="Hackathon Kick-off" required />
+              <FormTextArea label="Description" value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} placeholder="Details about the event..." />
+              <div className="grid grid-cols-2 gap-4">
+                <FormInput label="Date *" type="date" value={formData.event_date} onChange={e => setFormData(p => ({ ...p, event_date: e.target.value }))} required />
+                <FormInput label="Time" type="time" value={formData.event_time} onChange={e => setFormData(p => ({ ...p, event_time: e.target.value }))} />
+              </div>
+              <FormInput label="Organizer" type="text" value={formData.organizer} onChange={e => setFormData(p => ({ ...p, organizer: e.target.value }))} placeholder="e.g., Coding Club" />
+              
+              <div className="pt-2">
+                <label className='flex items-center gap-3 font-bold text-slate dark:text-dark-slate'>
+                  <input type="checkbox" checked={formData.is_recurring} onChange={e => setFormData(p => ({ ...p, is_recurring: e.target.checked }))} className='w-5 h-5 text-red border-2 border-slate/30 dark:border-white/30 rounded focus:ring-red bg-transparent' />
+                  Recurring Event
+                </label>
+              </div>
+              {formData.is_recurring && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate/5 dark:bg-white/5 rounded-lg border border-slate/10 dark:border-white/10">
+                  <FormInput label="Interval" type="number" min="1" value={formData.recurrence_interval} onChange={e => setFormData(p => ({ ...p, recurrence_interval: parseInt(e.target.value) || 1 }))} />
+                  <div>
+                    <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">Period</label>
+                    <select value={formData.recurrence_type} onChange={e => setFormData(p => ({ ...p, recurrence_type: e.target.value }))} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium">
+                      <option value="daily">Days</option>
+                      <option value="weekly">Weeks</option>
+                      <option value="monthly">Months</option>
+                      <option value="yearly">Years</option>
+                    </select>
+                  </div>
+                  <FormInput label="End Date" type="date" value={formData.recurrence_end_date} onChange={e => setFormData(p => ({ ...p, recurrence_end_date: e.target.value }))} />
+                </div>
+              )}
+
+              <div className="pt-4 flex justify-end gap-3">
+                <ActionButton type="button" onClick={closeModal} color="muted">Cancel</ActionButton>
+                <ActionButton type="submit" color="red" disabled={loading}>
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingEvent ? 'Save Changes' : 'Create Event')}
+                </ActionButton>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function ShareModal({ event, onClose }) {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?id=${event.id}`;
+    const shareText = `Join me for ${event.title} on ${event.event_date}${event.event_time ? ` at ${event.event_time}` : ''}`;
+
+    const copyToClipboard = () => {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert('Link copied!');
+      }, (err) => {
+        console.error('Failed to copy:', err);
+      });
+    };
+    
+    return (
+      <div className='fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-60 p-4'>
+        <div className='bg-elevated dark:bg-dark-elevated rounded-xl p-6 max-w-sm w-full shadow-xl border border-black/10 dark:border-white/10'>
+          <div className='flex justify-between items-center mb-4'>
+            <h3 className='text-xl font-bold text-text dark:text-dark-text'>Share Event</h3>
+            <button onClick={onClose} className='p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors'><X className='w-5 h-5'/></button>
+          </div>
+          <div className='space-y-3'>
+            <ShareButton onClick={copyToClipboard} icon={<Share className='text-red' />}>Copy Link</ShareButton>
+            <ShareButton href={`mailto:?subject=${encodeURIComponent(`Invitation: ${event.title}`)}&body=${encodeURIComponent(`${shareText}\n\nView event details: ${shareUrl}`)}`} icon={<Mail className='text-blue' />}>Share via Email</ShareButton>
+            <ShareButton href={`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`} icon={<MessageCircle className='text-green' />}>Share via WhatsApp</ShareButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
+
+// --- HELPER & STYLED COMPONENTS ---
+const StatCard = ({ icon, title, value, color }) => (
+  <div className={`bg-elevated dark:bg-dark-elevated rounded-xl p-6 shadow-md border border-black/10 dark:border-white/10 transition-transform hover:scale-105 hover:shadow-lg`}>
+    <div className='flex items-center gap-4'>
+      <div className={`p-3 bg-${color}/10 rounded-xl`}>{icon}</div>
+      <div>
+        <p className='text-muted dark:text-dark-muted text-sm font-medium uppercase tracking-wide'>{title}</p>
+        <p className='text-3xl font-bold text-text dark:text-dark-text'>{value}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const NavButton = ({ children, ...props }) => (
+  <button {...props} className="p-3 rounded-full bg-slate/10 dark:bg-white/10 hover:bg-slate/20 dark:hover:bg-white/20 transition-colors text-slate dark:text-dark-slate">{children}</button>
+);
+
+const ActionButton = ({ children, color, className = '', ...props }) => {
+  const colorClasses = {
+    red: 'bg-red hover:bg-red/90 text-white',
+    green: 'bg-green hover:bg-green/90 text-white',
+    blue: 'bg-blue hover:bg-blue/90 text-white',
+    muted: 'bg-slate/20 dark:bg-white/20 hover:bg-slate/30 dark:hover:bg-white/30 text-slate dark:text-dark-text',
+  };
+  return (
+    <button {...props} className={`flex items-center justify-center gap-2 px-5 py-2.5 font-bold rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${colorClasses[color]} ${className}`}>
+      {children}
+    </button>
+  );
+};
+
+const FormInput = ({ label, ...props }) => (
+  <div>
+    <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">{label}</label>
+    <input {...props} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium" />
+  </div>
+);
+
+const FormTextArea = ({ label, ...props }) => (
+  <div>
+    <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">{label}</label>
+    <textarea {...props} rows={3} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium" />
+  </div>
+);
+
+const InfoRow = ({ icon, text }) => (
+  <div className="flex items-center gap-3 text-slate dark:text-dark-slate">
+    <div className="p-2 bg-slate/10 dark:bg-white/10 rounded-lg">{icon}</div>
+    <span className="font-medium text-lg">{text}</span>
+  </div>
+);
+
+const ShareButton = ({ children, icon, href, ...props }) => {
+  const commonProps = {
+    ...props,
+    className: 'w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg hover:bg-slate/10 dark:hover:bg-white/10 flex items-center gap-3 transition-all duration-200 hover:scale-105 font-bold'
+  };
+  return href ? <a href={href} target="_blank" rel="noopener noreferrer" {...commonProps}>{icon}{children}</a> : <button type="button" {...commonProps}>{icon}{children}</button>;
+};
