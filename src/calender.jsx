@@ -196,14 +196,29 @@ export default function CommunityCalendar() {
     }
   }, [events]);
 
+  const refreshSelectedEvent = async (eventId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/events`);
+      if (response.ok) {
+        const allEvents = await response.json();
+        const updatedEvent = allEvents.find(e => e.id === eventId)
+        if (updatedEvent) {
+          setSelectedEvent(updateEvent);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing selected event:', err)
+    }
+  }
+
   const createRSVP = async (eventId, rsvpData) => {
     try {
       setRsvpLoading(true);
       setError(null);
       const response = await fetch(`${API_BASE_URL}/events/${eventId}/rsvp`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json '},
-        body: JSON.stringify(rsvpData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rsvpData),
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -211,21 +226,33 @@ export default function CommunityCalendar() {
       }
       const newRsvp = await response.json();
       setUserRsvp(newRsvp);
+      
+      // Update the selected event's RSVP counts immediately
       await refreshEvents();
+      const response2 = await fetch(`${API_BASE_URL}/events`);
+      if (response2.ok) {
+        const allEvents = await response2.json();
+        const updatedEvent = allEvents.find(e => e.id === eventId);
+        if (updatedEvent) {
+          setSelectedEvent(updatedEvent);
+        }
+      }
+      
       return newRsvp;
     } catch (err) {
-      setError('Failed to RSVP:' + err.message);
+      setError('Failed to RSVP: ' + err.message);
       throw err;
     } finally {
       setRsvpLoading(false);
     }
-  }
+  };
 
   const updateRSVP = async (eventId, rsvpId, updateData) => {
     try {
       setRsvpLoading(true);
+      setError(null);
       const response = await fetch(`${API_BASE_URL}/events/${eventId}/rsvp/${rsvpId}`, {
-        method: 'Put',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData),
       });
@@ -233,12 +260,23 @@ export default function CommunityCalendar() {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to update RSVP');
       }
-      const updatedRSVP = await response.json();
-      setUserRsvp(updatedRSVP);
+      const updatedRsvp = await response.json();
+      setUserRsvp(updatedRsvp);
+      
+      // Update the selected event's RSVP counts immediately
       await refreshEvents();
-      return updatedRSVP;
+      const response2 = await fetch(`${API_BASE_URL}/events`);
+      if (response2.ok) {
+        const allEvents = await response2.json();
+        const updatedEvent = allEvents.find(e => e.id === eventId);
+        if (updatedEvent) {
+          setSelectedEvent(updatedEvent);
+        }
+      }
+      
+      return updatedRsvp;
     } catch (err) {
-      setError('Failed to update RSVP:' + err.message);
+      setError('Failed to update RSVP: ' + err.message);
       throw err;
     } finally {
       setRsvpLoading(false);
@@ -307,7 +345,11 @@ export default function CommunityCalendar() {
   // --- EVENT HANDLERS ---
   const handleDayClick = (dayData) => {
     setSelectedDate(dayData.date);
-    setFormData(prev => ({ ...prev, event_date: formatDate(dayData.date) }));
+    setFormData(prev => ({
+      ...prev, 
+      event_date: formatDate(dayData.date),
+      location_type: 'in_person'
+    }));
     setSelectedEvent(null);
     setShowModal(true);
   };
@@ -448,7 +490,13 @@ export default function CommunityCalendar() {
             <ActionButton onClick={handleDownload} color="green" disabled={loading}>
               <Download size={18}/> Export
             </ActionButton>
-            <ActionButton onClick={() => setShowModal(true)} color="red" disabled={loading}>
+            <ActionButton onClick={() => {
+              setFormData(prev => ({
+                ...prev,
+                location_type: 'in_person'
+              }));
+              setShowModal(true)
+            }} color="red" disabled={loading}>
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />} Add Event
             </ActionButton>
           </div>
