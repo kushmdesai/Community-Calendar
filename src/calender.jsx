@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Clock, User, X, Loader2, AlertCircle, Share, Mail, MessageCircle, Download, MapPin } from 'lucide-react';
 
 // Main App Component -- Themed For Hackclub theme
 export default function CommunityCalendar() {
@@ -14,6 +14,12 @@ export default function CommunityCalendar() {
   const [error, setError] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
   const [stats, setStats] = useState(null);
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('userEmail') || '');
+  const [userName, setUserName] = useState(() => localStorage.getItem('userName') || '');
+  const [userRsvp, setUserRsvp] = useState(null);
+  const [eventRsvps, setEventRsvps] = useState([]);
+  const [rsvpLoading, setRsvpLoading] = useState(false);
+  const [showRsvpModal, setShowRsvpModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [theme, setTheme] = useState('dark');
   const [formData, setFormData] = useState({
@@ -22,6 +28,12 @@ export default function CommunityCalendar() {
     event_time: '',
     organizer: '',
     event_date: '',
+    location: '',
+    location_type: 'in_person',
+    location_name: '',
+    location_address: '',
+    online_meeting_url: '',
+    max_attendees: '',
     is_recurring: false,
     recurrence_type: 'weekly',
     recurrence_interval: 1,
@@ -183,6 +195,69 @@ export default function CommunityCalendar() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [events]);
+
+  const createRSVP = async (eventId, rsvpData) => {
+    try {
+      setRsvpLoading(true);
+      setError(null);
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}/rsvp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json '},
+        body: JSON.stringify(rsvpData)
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to RSVP');
+      }
+      const newRsvp = await response.json();
+      setUserRsvp(newRsvp);
+      await refreshEvents();
+      return newRsvp;
+    } catch (err) {
+      setError('Failed to RSVP:' + err.message);
+      throw err;
+    } finally {
+      setRsvpLoading(false);
+    }
+  }
+
+  const updateRSVP = async (eventId, rsvpId, updateData) => {
+    try {
+      setRsvpLoading(true);
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}/rsvp/${rsvpId}`, {
+        method: 'Put',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to update RSVP');
+      }
+      const updatedRSVP = await response.json();
+      setUserRsvp(updatedRSVP);
+      await refreshEvents();
+      return updatedRSVP;
+    } catch (err) {
+      setError('Failed to update RSVP:' + err.message);
+      throw err;
+    } finally {
+      setRsvpLoading(false);
+    }
+  };
+
+  const fetEventRSVPs = async (eventId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}/rsvps`);
+      if (response.ok) {
+        const rsvps = await response.json()
+        setEventRsvps(rsvps);
+        const myRsvp = rsvps.find(rsvp => rsvp.attendee_email == userEmail);
+        setUserRsvp(myRsvp || null);
+      }
+    } catch (err) {
+      console.error('Error fetching RSVPs:', err);
+    }
+  }
   
   // NEW: Effect to handle theme changes
   useEffect(() => {
@@ -240,6 +315,7 @@ export default function CommunityCalendar() {
   const handleEventClick = (event, e) => {
     e.stopPropagation();
     setSelectedEvent(event);
+    fetEventRSVPs(event.id)
     setShowModal(true);
   };
 
@@ -251,6 +327,7 @@ export default function CommunityCalendar() {
       event_date: event.event_date,
       event_time: event.event_time || '',
       organizer: event.organizer || '',
+      location: event.location || '',
       is_recurring: event.is_recurring || false,
       recurrence_type: event.recurrence_type || 'weekly',
       recurrence_interval: event.recurrence_interval || 1,
@@ -270,6 +347,7 @@ export default function CommunityCalendar() {
           event_date: formData.event_date,
           event_time: formData.event_time || null,
           organizer: formData.organizer || null,
+          location: formData.location || null,
           is_recurring: Boolean(formData.is_recurring),
           recurrence_type: formData.is_recurring ? formData.recurrence_type : null,
           recurrence_interval: formData.is_recurring ? parseInt(formData.recurrence_interval) : null,
@@ -431,6 +509,18 @@ export default function CommunityCalendar() {
             onEdit={handleEditEvent}
             onDelete={deleteEvent}
             onShare={() => setShowShareModal(true)}
+            userRsvp={userRsvp}
+            onShowRsvp={() => setShowRsvpModal(true)}
+          />
+        )}
+        {showRsvpModal && selectedEvent && (
+          <RSVPModal
+            event={selectedEvent}
+            userRsvp={userRsvp}
+            onClose={() => setShowRsvpModal(false)}
+            onCreate={createRSVP}
+            onUpdate={updateRSVP}
+            loading={rsvpLoading}
           />
         )}
       </div>
@@ -450,7 +540,9 @@ function EventModal({
   loading,
   onEdit,
   onDelete,
-  onShare
+  onShare,
+  userRsvp,
+  onShowRsvp
 }) {
   return (
     <div className="fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -469,6 +561,19 @@ function EventModal({
             {selectedEvent.event_time && <InfoRow icon={<Clock className="text-blue" />} text={selectedEvent.event_time} />}
             {selectedEvent.organizer && <InfoRow icon={<User className="text-green" />} text={selectedEvent.organizer} />}
             {selectedEvent.description && <p className="text-slate dark:text-dark-slate bg-slate/5 dark:bg-white/5 p-4 rounded-lg leading-relaxed">{selectedEvent.description}</p>}
+            {(selectedEvent.location_name || selectedEvent.location_address || selectedEvent.online_meeting_url) && (
+              <InfoRow 
+                icon={<MapPin className='text-purple'/>}
+                text={
+                  selectedEvent.location_type === 'online'
+                  ? `Online: ${selectedEvent.online_meeting_url}`
+                  : selectedEvent.location_type === 'hybrid'
+                  ? `Hybrid: ${selectedEvent.location_name} + Online`
+                  : `${selectedEvent.location}${selectedEvent.location_address ? `, ${selectedEvent.location_address}`:''}`
+                }
+              />
+            )}
+            <InfoRow icon={<User className='text-green' />} text={`Going: ${selectedEvent.going_count || 0} | Maybe: ${selectedEvent.maybe_count || 0}${selectedEvent.max_attendees ? ` | Max: ${selectedEvent.max_attendees}` : ''}`} />
             <div className="grid grid-cols-2 gap-3 pt-4">
               <ActionButton onClick={() => onEdit(selectedEvent)} color="blue" disabled={loading}>Edit</ActionButton>
               <ActionButton onClick={() => onDelete(selectedEvent.id)} color="red" disabled={loading}>
@@ -476,6 +581,9 @@ function EventModal({
               </ActionButton>
               <ActionButton onClick={onShare} color="green" className="col-span-2">
                 <Share className='w-4 h-4 inline mr-2' /> Share
+              </ActionButton>
+              <ActionButton onClick={() => onShowRsvp()} color={userRsvp ? "blue": "green"} className='col-span-2'>
+                {userRsvp ?  `RSVP: ${userRsvp.status}` : 'RSVP to Event'}
               </ActionButton>
             </div>
           </div>
@@ -489,7 +597,33 @@ function EventModal({
               <FormInput label="Time" type="time" value={formData.event_time} field="event_time" updateField={updateFormField} />
             </div>
             <FormInput label="Organizer" type="text" value={formData.organizer} field="organizer" updateField={updateFormField} placeholder="e.g., Coding Club" />
-            
+            <FormInput label="Max Attendees (optional)" type="number" min="1" value={formData.max_attendees} placeholder="Leave empty for unlimited" />
+            <div className='space-y-4'>
+              <div>
+                <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">Location Type</label>
+                <select 
+                  value={formData.location_type || 'in_person'}
+                  onChange={e => updateFormField('location_type', e.target.value)}
+                  className='w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium'
+                >
+                  <option value="in_person">In Person</option>
+                  <option value="online">Online</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </div>
+
+              {(formData.location_type === 'in_person' || formData.location_type === 'hybrid') && (
+                <>
+                  <FormInput label='Location Name' type="text" value={formData.location_name || ''} field="location_name" updateField={updateFormField} placeholder="e.g., Community Hall"/>
+                  <FormInput label="Address" type="text" value={formData.location_address || ''} field="location_address" updateField={updateFormField} placeholder="123 Main St, City, State"/>
+                </>
+              )}
+
+              {(formData.location_type === 'online' || formData.location_type === 'hybrid') && (
+                <FormInput label="Meeting Url" type="url" value={formData.online_meeting_url || ''} field="online_meeting_url" updateField={updateFormField} placeholder="https://zoom.us/j/..." />
+              )}
+            </div>
+
             <div className="pt-2">
               <label className='flex items-center gap-3 font-bold text-slate dark:text-dark-slate'>
                 <input type="checkbox" checked={formData.is_recurring} onChange={e => updateFormField('is_recurring', e.target.checked)} className='w-5 h-5 text-red border-2 border-slate/30 dark:border-white/30 rounded focus:ring-red bg-transparent' />
@@ -552,6 +686,74 @@ View event details: ${shareUrl}`)}`} icon={<Mail className='text-blue' />}>Share
           <ShareButton href={`https://wa.me/?text=${encodeURIComponent(`${shareText}
 ${shareUrl}`)}`} icon={<MessageCircle className='text-green' />}>Share via WhatsApp</ShareButton>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RSVPModal({ event, onClose, userRsvp, onCreate, onUpdate, loading }) {
+  const [status, setStatus] = useState(userRsvp?.status || 'going');
+  const [notes, setNotes] = useState(userRsvp?.notes || '');
+  const [name, setName] = useState(() => localStorage.getItem('userName') || '');
+  const [email, setEmail] = useState(() => localStorage.getItem('userEmail') || '');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name || !email) return;
+    
+    // Save user info
+    localStorage.setItem('userName', name);
+    localStorage.setItem('userEmail', email);
+    
+    const rsvpData = { attendee_name: name, attendee_email: email, status, notes };
+    
+    try {
+      if (userRsvp) {
+        await onUpdate(event.id, userRsvp.id, { status, notes });
+      } else {
+        await onCreate(event.id, rsvpData);
+      }
+      onClose();
+    } catch (err) {
+      console.error('RSVP error:', err);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate/75 dark:bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-elevated dark:bg-dark-elevated rounded-xl p-6 max-w-md w-full shadow-xl border border-black/10 dark:border-white/10">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-text dark:text-dark-text">
+            {userRsvp ? 'Update RSVP' : 'RSVP to Event'}
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate/10 dark:hover:bg-white/10 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <FormInput label="Your Name *" type="text" value={name} field="name" updateField={(_, v) => setName(v)} required />
+          <FormInput label="Your Email *" type="email" value={email} field="email" updateField={(_, v) => setEmail(v)} required />
+          
+          <div>
+            <label className="block text-sm font-bold text-slate dark:text-dark-slate mb-1">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} className="w-full p-3 border-2 border-slate/20 dark:border-white/20 rounded-lg bg-background dark:bg-dark-background focus:ring-2 focus:ring-red focus:border-red transition-all font-medium">
+              {' '}
+              <option value="going">Going</option>
+              <option value="maybe">Maybe</option>
+              <option value="not_going">Not Going</option>
+            </select>
+          </div>
+          
+          <FormTextArea label="Notes (optional)" value={notes} field="notes" updateField={(_, v) => setNotes(v)} placeholder="Any additional notes..." />
+          
+          <div className="flex justify-end gap-3 pt-4">
+            <ActionButton type="button" onClick={onClose} color="muted">Cancel</ActionButton>
+            <ActionButton type="submit" color="green" disabled={loading}>
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (userRsvp ? 'Update RSVP' : 'Submit RSVP')}
+            </ActionButton>
+          </div>
+        </form>
       </div>
     </div>
   );
